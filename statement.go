@@ -64,6 +64,19 @@ type FuncCallStmtInterface interface {
 	FuncCall()
 }
 
+// ModelFuncCallStmt is a statement that calls a model function
+type ModelFuncCallStmt struct {
+	FuncName string
+	Args     []ArgPair
+	Inputs   []NodeExp
+}
+
+func (m ModelFuncCallStmt) String() string {
+	return fmt.Sprintf("%s(%v)", m.FuncName, m.Args)
+}
+
+func (m ModelFuncCallStmt) FuncCall() {}
+
 // BuiltinFuncCallStmt is a statement that calls a builtin function
 type BuiltinFuncCallStmt struct {
 	FuncName string

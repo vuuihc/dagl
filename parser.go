@@ -22,12 +22,15 @@ func (p *parser) parse() (statements []Statement) {
 			return
 		case AT:
 			statements = p.parseConst()
+			break
 		case IDENTIFIER:
 			switch v {
 			case "inline":
 				statements = p.parseInlineFunc()
+				break
 			case "func":
 				statements = p.parseFunc()
+				break
 			default:
 				p.reportErrorf("unexpected token: %s", tok)
 			}
@@ -48,8 +51,10 @@ func (p *parser) parseConst() (statements []Statement) {
 	case AT:
 		_, v = p.checkTokenType(IDENTIFIER)
 		statements = append(statements, AssignStmt{VarName: constName, Value: StrVal{Type: StrValTypeConst, Value: v.(string)}})
+		break
 	case STRING:
 		statements = []Statement{AssignStmt{VarName: constName, Value: StrVal{Type: StrValTypeLiteral, Value: v.(string)}}}
+		break
 	default:
 		p.reportErrorf("expect string, got %s", tok)
 		return
@@ -59,7 +64,6 @@ func (p *parser) parseConst() (statements []Statement) {
 }
 
 func (p *parser) parseInlineFunc() (statements []Statement) {
-	p.checkTokenType(IDENTIFIER)
 	p.checkTokenAndValue(IDENTIFIER, "func")
 	statements = p.parseFunc()
 	return
@@ -75,7 +79,17 @@ func (p *parser) parseFunc() (statements []Statement) {
 		if tok == RIGHT_PARENTHESIS {
 			break
 		}
-		_, v := p.checkTokenType(IDENTIFIER)
+		if len(inputs) > 0 {
+			if tok != COMMA {
+				p.reportErrorf("expect comma, got %s", tok)
+				return
+			}
+			tok, v = p.lexer.Next()
+		}
+		if tok != IDENTIFIER {
+			p.reportErrorf("expect identifier, got %s", tok)
+			return
+		}
 		inputs = append(inputs, v.(string))
 	}
 	p.checkTokenType(LEFT_CURLY_BRACE)
@@ -100,15 +114,19 @@ func (p *parser) parseBody() (statements []Statement) {
 			break
 		case IDENTIFIER:
 			switch v {
-			case "builtin":
-				stmts = p.parseBuiltinFuncCall()
+			case "model", "builtin":
+				stmts = p.parseBuiltinFuncCall(v)
+				break
 			case "if":
 				stmts = p.parseIfStmt()
+				break
 			default:
 				t1, _ := p.lexer.LookAhead()
 				if t1 == ASSIGNMENT {
+					p.lexer.Back(tok, v)
 					stmts = p.parseNodeAssign()
 				}
+				p.reportErrorf("unexpected token: %s, %s\n", tok, v)
 			}
 			break
 		case RIGHT_CURLY_BRACE:
@@ -129,7 +147,6 @@ func (p *parser) parseInlineFuncCall() (statements []Statement) {
 	_, v := p.checkTokenType(IDENTIFIER)
 	funcName := v.(string)
 	p.checkTokenType(COMMA)
-	p.checkTokenType(LEFT_SQUARE_BRACKET)
 	inputs := p.parseInputs()
 	p.checkTokenType(RIGHT_PARENTHESIS)
 	p.checkTokenType(SEMICOLON)
@@ -137,7 +154,7 @@ func (p *parser) parseInlineFuncCall() (statements []Statement) {
 	return
 }
 
-func (p *parser) parseBuiltinFuncCall() (statements []Statement) {
+func (p *parser) parseBuiltinFuncCall(_type interface{}) (statements []Statement) {
 	p.checkTokenType(LEFT_PARENTHESIS)
 	_, v := p.checkTokenType(STRING)
 	funcName := v.(string)
@@ -146,6 +163,10 @@ func (p *parser) parseBuiltinFuncCall() (statements []Statement) {
 	p.checkTokenType(COMMA)
 	argPairs := p.parseArgPairs()
 	p.checkTokenType(SEMICOLON)
+	if _type == "model" {
+		statements = []Statement{ModelFuncCallStmt{FuncName: funcName, Inputs: inputs, Args: argPairs}}
+		return
+	}
 	statements = []Statement{BuiltinFuncCallStmt{FuncName: funcName, Inputs: inputs, Args: argPairs}}
 	return
 }
@@ -156,7 +177,14 @@ func (p *parser) parseInputs() (inputs []NodeExp) {
 	for {
 		tok, v := p.lexer.Next()
 		if tok == RIGHT_SQUARE_BRACKET {
-			break
+			return
+		}
+		if len(inputs) > 0 {
+			if tok != COMMA {
+				p.reportErrorf("expect comma, got %s", tok)
+				return
+			}
+			tok, v = p.lexer.Next()
 		}
 		if tok != IDENTIFIER {
 			p.reportErrorf("expect identifier, got %s", tok)
@@ -164,7 +192,6 @@ func (p *parser) parseInputs() (inputs []NodeExp) {
 		}
 		inputs = append(inputs, NodeExp{Type: NodeExpTypeVar, Value: v.(string)})
 	}
-	return
 }
 
 // parseArgPairs parses argument pairs of a function.
@@ -174,6 +201,13 @@ func (p *parser) parseArgPairs() (argPairs []ArgPair) {
 		if tok == RIGHT_PARENTHESIS {
 			break
 		}
+		if len(argPairs) > 0 {
+			if tok != COMMA {
+				p.reportErrorf("expect comma, got %s", tok)
+				return
+			}
+			tok, v = p.lexer.Next()
+		}
 		if tok != IDENTIFIER {
 			p.reportErrorf("expect identifier, got %s", tok)
 			return
@@ -182,7 +216,8 @@ func (p *parser) parseArgPairs() (argPairs []ArgPair) {
 		p.checkTokenType(ASSIGNMENT)
 		var argValue StrVal
 		tok, v = p.lexer.Next()
-		if tok == IDENTIFIER {
+		if tok == AT {
+			_, v = p.checkTokenType(IDENTIFIER)
 			argValue = StrVal{Type: StrValTypeConst, Value: v.(string)}
 		} else if tok == STRING {
 			argValue = StrVal{Type: StrValTypeLiteral, Value: v.(string)}
@@ -202,10 +237,12 @@ func (p *parser) parseNodeAssign() (statements []Statement) {
 	tok, v = p.lexer.Next()
 	switch tok {
 	case IDENTIFIER:
-		if v.(string) == "builtin" {
-			stmts := p.parseBuiltinFuncCall()
+		switch v.(string) {
+		case "model", "builtin":
+			stmts := p.parseBuiltinFuncCall(v)
 			statements = append(statements, NodeAssignStmt{VarName: nodeName, Value: stmts[0].(FuncCallStmtInterface)})
-		} else {
+			break
+		default:
 			p.reportErrorf("expect builtin, got %s", v.(string))
 		}
 	case AT:
@@ -227,9 +264,10 @@ func (p *parser) parseIfStmt() (statements []Statement) {
 	switch tok {
 	case IDENTIFIER:
 		switch v.(string) {
-		case "builtin":
-			stmts := p.parseBuiltinFuncCall()
+		case "model", "builtin":
+			stmts := p.parseBuiltinFuncCall(v)
 			cond = NodeExp{Type: NodeExpTypeFunc, Value: stmts[0].(FuncCallStmtInterface)}
+			break
 		default:
 			cond = NodeExp{Type: NodeExpTypeVar, Value: v.(string)}
 		}
@@ -242,16 +280,7 @@ func (p *parser) parseIfStmt() (statements []Statement) {
 	p.checkTokenType(RIGHT_PARENTHESIS)
 	// parse true body
 	p.checkTokenType(LEFT_CURLY_BRACE)
-	var trueStmts []Statement
-	for {
-		tok, v = p.lexer.LookAhead()
-		if tok == RIGHT_CURLY_BRACE {
-			p.lexer.Next()
-			break
-		}
-		stmts := p.parseBody()
-		trueStmts = append(trueStmts, stmts...)
-	}
+	trueStmts := p.parseBody()
 	var falseStmts []Statement
 	tok, v = p.lexer.LookAhead()
 	if tok == IDENTIFIER && v.(string) == "else" {
@@ -260,15 +289,7 @@ func (p *parser) parseIfStmt() (statements []Statement) {
 		if tok != LEFT_CURLY_BRACE {
 			p.reportErrorf("expect {, got %s", tok)
 		}
-		for {
-			tok, v = p.lexer.LookAhead()
-			if tok == RIGHT_CURLY_BRACE {
-				p.lexer.Next()
-				break
-			}
-			stmts := p.parseBody()
-			falseStmts = append(falseStmts, stmts...)
-		}
+		falseStmts = p.parseBody()
 	}
 	statements = []Statement{IfStmt{Cond: cond, True: trueStmts, False: falseStmts}}
 	return

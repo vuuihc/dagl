@@ -78,11 +78,17 @@ var literalToToken = map[rune]Token{
 	'@': AT,
 }
 
+type TokenData struct {
+	Token Token
+	Value interface{}
+}
+
 type lexer struct {
 	input     string
 	pos       int // 在整个input中的位置
 	line      int // 行号，用于报错
 	lineBegin int
+	queue     []TokenData
 }
 
 func newLexer(input string) *lexer {
@@ -95,6 +101,11 @@ func newLexer(input string) *lexer {
 // 情况2，已经遍历完成，返回EOF token
 // 情况3，解析错误，返回ilegal 和 报错信息
 func (l *lexer) Next() (t Token, v interface{}) {
+	if len(l.queue) > 0 {
+		tok := l.queue[len(l.queue)-1]
+		l.queue = l.queue[:len(l.queue)-1]
+		return tok.Token, tok.Value
+	}
 	item, err := l.nextItem()
 	if err == io.EOF {
 		return EOF, nil
@@ -125,6 +136,12 @@ func (l *lexer) LookAhead() (t Token, v interface{}) {
 	l.line = line
 	l.lineBegin = lineBegin
 	return
+}
+
+// Back 用于回退一个token
+// 会将指针回退到上一个token的位置
+func (l *lexer) Back(tok Token, val interface{}) {
+	l.queue = append(l.queue, TokenData{tok, val})
 }
 
 func (l *lexer) scanComment() (Token, interface{}) {
