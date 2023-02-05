@@ -114,6 +114,19 @@ func (l *lexer) Next() (t Token, v interface{}) {
 	}
 }
 
+// LookAhead 用于预读下一个token
+// 会返回下一个token，但是不会移动指针
+func (l *lexer) LookAhead() (t Token, v interface{}) {
+	pos := l.pos
+	line := l.line
+	lineBegin := l.lineBegin
+	t, v = l.Next()
+	l.pos = pos
+	l.line = line
+	l.lineBegin = lineBegin
+	return
+}
+
 func (l *lexer) scanComment() (Token, interface{}) {
 	item, err := l.nextItem()
 	if err != nil || item != '/' {
@@ -151,6 +164,9 @@ func (l *lexer) scanIdentifier(begin rune) (Token, interface{}) {
 	for {
 		item, err := l.nextItem()
 		if err == io.EOF || !l.isIdentifier(item) {
+			if !l.isIdentifier(item) {
+				l.backItem(item)
+			}
 			if buf.Len() > 0 {
 				return IDENTIFIER, buf.String()
 			}
@@ -176,6 +192,14 @@ func (l *lexer) nextItem() (rune, error) {
 		l.lineBegin = l.pos
 	}
 	return r, nil
+}
+
+// backItem is used to back one rune
+func (l *lexer) backItem(item rune) {
+	if item == '\n' {
+		l.line--
+	}
+	l.pos -= utf8.RuneLen(item)
 }
 
 func (l *lexer) errorf(format string, args ...interface{}) string {
