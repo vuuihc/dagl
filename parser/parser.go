@@ -1,6 +1,9 @@
-package main
+package parser
 
-import "fmt"
+import (
+	"fmt"
+	"log"
+)
 
 // NewParser returns a new parser
 func NewParser(input string) *parser {
@@ -11,8 +14,9 @@ type parser struct {
 	lexer *lexer
 }
 
-func (p *parser) parse() (statements []Statement) {
+func (p *parser) Parse() (statements []Statement) {
 	for {
+		var stmts []Statement
 		tok, v := p.lexer.Next()
 		switch tok {
 		case EOF:
@@ -21,24 +25,28 @@ func (p *parser) parse() (statements []Statement) {
 			p.reportErrorf("ilegal token: %s", v)
 			return
 		case AT:
-			statements = p.parseConst()
+			stmts = p.parseConst()
+			break
+		case COMMENT:
+			stmts = []Statement{CommentStmt{Comment: v.(string)}}
 			break
 		case IDENTIFIER:
 			switch v {
 			case "inline":
-				statements = p.parseInlineFunc()
+				stmts = p.parseInlineFunc()
 				break
 			case "func":
-				statements = p.parseFunc()
+				stmts = p.parseFunc()
 				break
 			default:
 				p.reportErrorf("unexpected token: %s", tok)
 			}
-			return
+			break
 		default:
 			p.reportErrorf("unexpected token: %s", tok)
 			return
 		}
+		statements = append(statements, stmts...)
 	}
 }
 
@@ -112,10 +120,16 @@ func (p *parser) parseBody() (statements []Statement) {
 		case AT:
 			stmts = p.parseInlineFuncCall()
 			break
+		case COMMENT:
+			stmts = []Statement{CommentStmt{Comment: v.(string)}}
+			break
 		case IDENTIFIER:
 			switch v {
-			case "model", "builtin":
-				stmts = p.parseBuiltinFuncCall(v)
+			case "builtin":
+				stmts = p.parseFuncCall(FuncCallTypeBuiltin)
+				break
+			case "model":
+				stmts = p.parseFuncCall(FuncCallTypeModel)
 				break
 			case "if":
 				stmts = p.parseIfStmt()
@@ -125,8 +139,10 @@ func (p *parser) parseBody() (statements []Statement) {
 				if t1 == ASSIGNMENT {
 					p.lexer.Back(tok, v)
 					stmts = p.parseNodeAssign()
+				} else {
+					stmts = append(stmts, NodeValStmt{Name: v.(string)})
+					p.checkTokenType(SEMICOLON)
 				}
-				p.reportErrorf("unexpected token: %s, %s\n", tok, v)
 			}
 			break
 		case RIGHT_CURLY_BRACE:
@@ -140,39 +156,44 @@ func (p *parser) parseBody() (statements []Statement) {
 }
 
 // parseInlineFuncCall parses inline function call.
-// @call(funcName, [input1, input2, ...])
 func (p *parser) parseInlineFuncCall() (statements []Statement) {
 	p.checkTokenAndValue(IDENTIFIER, "call")
-	p.checkTokenType(LEFT_PARENTHESIS)
-	_, v := p.checkTokenType(IDENTIFIER)
-	funcName := v.(string)
-	p.checkTokenType(COMMA)
-	inputs := p.parseInputs()
-	p.checkTokenType(RIGHT_PARENTHESIS)
-	p.checkTokenType(SEMICOLON)
-	statements = []Statement{InlineFuncCallStmt{FuncName: funcName, Inputs: inputs}}
+	statements = p.parseFuncCall(FuncCallTypeInline)
 	return
 }
 
-func (p *parser) parseBuiltinFuncCall(_type interface{}) (statements []Statement) {
+// parseFuncCall parses inline function call.
+func (p *parser) parseFuncCall(_type FuncCallType) (statements []Statement) {
 	p.checkTokenType(LEFT_PARENTHESIS)
-	_, v := p.checkTokenType(STRING)
-	funcName := v.(string)
+	var funcName string
+	if p.checkIfNextToken(STRING) {
+		_, v := p.checkTokenType(STRING)
+		funcName = v.(string)
+	} else {
+		_, v := p.checkTokenType(IDENTIFIER)
+		funcName = v.(string)
+	}
 	p.checkTokenType(COMMA)
 	inputs := p.parseInputs()
-	p.checkTokenType(COMMA)
-	argPairs := p.parseArgPairs()
-	p.checkTokenType(SEMICOLON)
-	if _type == "model" {
-		statements = []Statement{ModelFuncCallStmt{FuncName: funcName, Inputs: inputs, Args: argPairs}}
-		return
+	var argPairs []ArgPair
+	if p.checkIfNextToken(COMMA) {
+		p.checkTokenType(COMMA)
+		argPairs = p.parseArgPairs()
+	} else {
+		p.checkTokenType(RIGHT_PARENTHESIS)
 	}
-	statements = []Statement{BuiltinFuncCallStmt{FuncName: funcName, Inputs: inputs, Args: argPairs}}
+	p.checkTokenType(SEMICOLON)
+	statements = []Statement{FuncCallStmt{Type: _type, FuncName: funcName, Inputs: inputs, Args: argPairs}}
 	return
 }
 
 // parseInputs parses inputs of a function.
 func (p *parser) parseInputs() (inputs []NodeExp) {
+	if !p.checkIfNextToken(LEFT_SQUARE_BRACKET) {
+		_, v := p.checkTokenType(IDENTIFIER)
+		inputs = []NodeExp{{Type: NodeExpTypeVar, Value: v.(string)}}
+		return
+	}
 	p.checkTokenType(LEFT_SQUARE_BRACKET)
 	for {
 		tok, v := p.lexer.Next()
@@ -238,16 +259,20 @@ func (p *parser) parseNodeAssign() (statements []Statement) {
 	switch tok {
 	case IDENTIFIER:
 		switch v.(string) {
-		case "model", "builtin":
-			stmts := p.parseBuiltinFuncCall(v)
-			statements = append(statements, NodeAssignStmt{VarName: nodeName, Value: stmts[0].(FuncCallStmtInterface)})
+		case "builtin":
+			stmts := p.parseFuncCall(FuncCallTypeBuiltin)
+			statements = append(statements, NodeAssignStmt{VarName: nodeName, Value: stmts[0].(FuncCallStmt)})
+			break
+		case "model":
+			stmts := p.parseFuncCall(FuncCallTypeModel)
+			statements = append(statements, NodeAssignStmt{VarName: nodeName, Value: stmts[0].(FuncCallStmt)})
 			break
 		default:
 			p.reportErrorf("expect builtin, got %s", v.(string))
 		}
 	case AT:
 		stmts := p.parseInlineFuncCall()
-		statements = append(statements, NodeAssignStmt{VarName: nodeName, Value: stmts[0].(FuncCallStmtInterface)})
+		statements = append(statements, NodeAssignStmt{VarName: nodeName, Value: stmts[0].(FuncCallStmt)})
 	default:
 		p.reportErrorf("expect @call or identifier, got %s", tok)
 	}
@@ -264,16 +289,20 @@ func (p *parser) parseIfStmt() (statements []Statement) {
 	switch tok {
 	case IDENTIFIER:
 		switch v.(string) {
-		case "model", "builtin":
-			stmts := p.parseBuiltinFuncCall(v)
-			cond = NodeExp{Type: NodeExpTypeFunc, Value: stmts[0].(FuncCallStmtInterface)}
+		case "builtin":
+			stmts := p.parseFuncCall(FuncCallTypeBuiltin)
+			cond = NodeExp{Type: NodeExpTypeFuncCall, Value: stmts[0].(FuncCallStmt)}
+			break
+		case "model":
+			stmts := p.parseFuncCall(FuncCallTypeModel)
+			cond = NodeExp{Type: NodeExpTypeFuncCall, Value: stmts[0].(FuncCallStmt)}
 			break
 		default:
 			cond = NodeExp{Type: NodeExpTypeVar, Value: v.(string)}
 		}
 	case AT:
 		stmts := p.parseInlineFuncCall()
-		cond = NodeExp{Type: NodeExpTypeFunc, Value: stmts[0].(FuncCallStmtInterface)}
+		cond = NodeExp{Type: NodeExpTypeFuncCall, Value: stmts[0].(FuncCallStmt)}
 	default:
 		p.reportErrorf("expect builtin or @call or identifier, got %s", tok)
 	}
@@ -313,7 +342,14 @@ func (p *parser) checkTokenType(tok Token) (Token, interface{}) {
 	return tok2, v
 }
 
+// checkIfNextToken checks if the next token is the expected one
+func (p *parser) checkIfNextToken(tok Token) bool {
+	tok2, _ := p.lexer.LookAhead()
+	return tok2 == tok
+}
+
 // reportErrorf reports error
 func (p *parser) reportErrorf(format string, args ...interface{}) {
-	fmt.Printf(format, args...)
+	ctx := fmt.Sprintf("line %d:\n %s:\n", p.lexer.line, p.lexer.input[p.lexer.lineBegin:p.lexer.pos])
+	log.Fatalf(ctx+format+"\n", args...)
 }

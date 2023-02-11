@@ -1,4 +1,4 @@
-package main
+package parser
 
 import (
 	"testing"
@@ -14,7 +14,7 @@ func TestLexerBuiltinFuncCall(t *testing.T) {
 	for _, e := range expected {
 		token, _ := l.Next()
 		if token != e {
-			t.Errorf("expected %v, got %v", e, token)
+			t.Fatalf("expected %v, got %v", e, token)
 		}
 	}
 }
@@ -29,7 +29,7 @@ func TestLexerInlineFuncCall(t *testing.T) {
 	for _, e := range expected {
 		token, _ := l.Next()
 		if token != e {
-			t.Errorf("expected %v, got %v", e, token)
+			t.Fatalf("expected %v, got %v", e, token)
 		}
 	}
 }
@@ -44,7 +44,7 @@ func TestLexerConstStr(t *testing.T) {
 	for _, e := range expected {
 		token, _ := l.Next()
 		if token != e {
-			t.Errorf("expected %v, got %v", e, token)
+			t.Fatalf("expected %v, got %v", e, token)
 		}
 	}
 }
@@ -59,7 +59,7 @@ func TestLexerNodeAssignment(t *testing.T) {
 	for _, e := range expected {
 		token, _ := l.Next()
 		if token != e {
-			t.Errorf("expected %v, got %v", e, token)
+			t.Fatalf("expected %v, got %v", e, token)
 		}
 	}
 }
@@ -74,7 +74,7 @@ func TestLexerIfStmt(t *testing.T) {
 	for _, e := range expected {
 		token, v := l.Next()
 		if token != e {
-			t.Errorf("expected %v, got %v, %v", e, token, v)
+			t.Fatalf("expected %v, got %v, %v", e, token, v)
 		}
 	}
 }
@@ -89,7 +89,7 @@ func TestLexerFuncDecl(t *testing.T) {
 	for _, e := range expected {
 		token, v := l.Next()
 		if token != e {
-			t.Errorf("expected %v, got %v, %v", e, token, v)
+			t.Fatalf("expected %v, got %v, %v", e, token, v)
 		}
 	}
 }
@@ -104,7 +104,22 @@ func TestLexerInlineFuncDecl(t *testing.T) {
 	for _, e := range expected {
 		token, v := l.Next()
 		if token != e {
-			t.Errorf("expected %v, got %v, %v", e, token, v)
+			t.Fatalf("expected %v, got %v, %v", e, token, v)
+		}
+	}
+}
+
+// TestLexerComment tests the lexer's ability to parse a comment
+func TestLexerComment(t *testing.T) {
+	input := `// this is a comment`
+	expected := []Token{
+		COMMENT, EOF,
+	}
+	l := newLexer(input)
+	for _, e := range expected {
+		token, _ := l.Next()
+		if token != e {
+			t.Fatalf("expected %v, got %v", e, token)
 		}
 	}
 }

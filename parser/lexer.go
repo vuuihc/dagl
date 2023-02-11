@@ -1,4 +1,4 @@
-package main
+package parser
 
 import (
 	"bytes"
@@ -156,6 +156,7 @@ func (l *lexer) scanComment() (Token, interface{}) {
 			return COMMENT, buf.String()
 		}
 		buf.WriteRune(item)
+
 	}
 }
 
