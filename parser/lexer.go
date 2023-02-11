@@ -1,4 +1,4 @@
-package main
+package parser
 
 import (
 	"bytes"
@@ -78,11 +78,17 @@ var literalToToken = map[rune]Token{
 	'@': AT,
 }
 
+type TokenData struct {
+	Token Token
+	Value interface{}
+}
+
 type lexer struct {
 	input     string
 	pos       int // 在整个input中的位置
 	line      int // 行号，用于报错
 	lineBegin int
+	queue     []TokenData
 }
 
 func newLexer(input string) *lexer {
@@ -95,6 +101,11 @@ func newLexer(input string) *lexer {
 // 情况2，已经遍历完成，返回EOF token
 // 情况3，解析错误，返回ilegal 和 报错信息
 func (l *lexer) Next() (t Token, v interface{}) {
+	if len(l.queue) > 0 {
+		tok := l.queue[len(l.queue)-1]
+		l.queue = l.queue[:len(l.queue)-1]
+		return tok.Token, tok.Value
+	}
 	item, err := l.nextItem()
 	if err == io.EOF {
 		return EOF, nil
@@ -114,6 +125,25 @@ func (l *lexer) Next() (t Token, v interface{}) {
 	}
 }
 
+// LookAhead 用于预读下一个token
+// 会返回下一个token，但是不会移动指针
+func (l *lexer) LookAhead() (t Token, v interface{}) {
+	pos := l.pos
+	line := l.line
+	lineBegin := l.lineBegin
+	t, v = l.Next()
+	l.pos = pos
+	l.line = line
+	l.lineBegin = lineBegin
+	return
+}
+
+// Back 用于回退一个token
+// 会将指针回退到上一个token的位置
+func (l *lexer) Back(tok Token, val interface{}) {
+	l.queue = append(l.queue, TokenData{tok, val})
+}
+
 func (l *lexer) scanComment() (Token, interface{}) {
 	item, err := l.nextItem()
 	if err != nil || item != '/' {
@@ -126,6 +156,7 @@ func (l *lexer) scanComment() (Token, interface{}) {
 			return COMMENT, buf.String()
 		}
 		buf.WriteRune(item)
+
 	}
 }
 
@@ -151,6 +182,9 @@ func (l *lexer) scanIdentifier(begin rune) (Token, interface{}) {
 	for {
 		item, err := l.nextItem()
 		if err == io.EOF || !l.isIdentifier(item) {
+			if !l.isIdentifier(item) {
+				l.backItem(item)
+			}
 			if buf.Len() > 0 {
 				return IDENTIFIER, buf.String()
 			}
@@ -176,6 +210,14 @@ func (l *lexer) nextItem() (rune, error) {
 		l.lineBegin = l.pos
 	}
 	return r, nil
+}
+
+// backItem is used to back one rune
+func (l *lexer) backItem(item rune) {
+	if item == '\n' {
+		l.line--
+	}
+	l.pos -= utf8.RuneLen(item)
 }
 
 func (l *lexer) errorf(format string, args ...interface{}) string {
