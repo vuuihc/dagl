@@ -12,7 +12,7 @@ import (
 type Node struct {
 	// Type 是节点要执行的任务名字。
 	//      约定 builtin.XXX 为系统内建任务
-	//           op.XXX     为注册到graphflow的Op名字
+	//           op.XXX     为注册到gflow的Op名字
 	Type string `msg:"type" json:"type"`
 
 	// Args 节点执行时候的参数。节点执行时也会传递给节点执行期
@@ -74,15 +74,15 @@ func (s Stack) Copy() Stack {
 	return newStack
 }
 
-// GFGenerator is a graphflow generator
+// GFGenerator is a gflow generator
 // Inputs: statements []parser.Statement
-// Outputs: graphflow Graph
+// Outputs: gflow Graph
 type GFGenerator struct {
 	statements []parser.Statement
 	graph      *Graph
 }
 
-// NewGFGenerator creates a new graphflow generator
+// NewGFGenerator creates a new gflow generator
 func NewGFGenerator(statements []parser.Statement) *GFGenerator {
 	return &GFGenerator{
 		statements: statements,
@@ -99,7 +99,7 @@ func (g *GFGenerator) reportErrorf(stmt parser.Statement, format string, args ..
 	log.Fatalf("generator error: %s\n%s", msg, ctx)
 }
 
-// GenerateGraphflow generates a graphflow graph
+// GenerateGraph generates a gflow graph
 func (g *GFGenerator) GenerateGraph() *Graph {
 	stack := Stack{}
 	for _, statement := range g.statements {

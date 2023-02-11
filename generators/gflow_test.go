@@ -42,9 +42,9 @@ func TestGenerateInlineFunc(t *testing.T) {
 	expected := &Graph{
 		Nodes: []Node{
 			{Type: "builtin.start"},
-			{Type: "builtin.jq", Inputs: []int{0}, Args: map[string][]string{"filter": []string{"{\"key\": .key, \"payload\": .payload}"}}, InDegree: 1},
-			{Type: "builtin.jq", Inputs: []int{0, 1}, Args: map[string][]string{"filter": []string{"{\"key\": .[0], \"payload\": .[1], \"ttl\": 259200000}"}}, InDegree: 2},
-			{Type: "builtin.set_cache", Inputs: []int{2}, Args: map[string][]string{"prefix": []string{"ime_rec_bert_ner_v1"}}, InDegree: 1},
+			{Type: "builtin.jq", Inputs: []int{0}, Args: map[string][]string{"filter": {"{\"key\": .key, \"payload\": .payload}"}}, InDegree: 1},
+			{Type: "builtin.jq", Inputs: []int{0, 1}, Args: map[string][]string{"filter": {"{\"key\": .[0], \"payload\": .[1], \"ttl\": 259200000}"}}, InDegree: 2},
+			{Type: "builtin.set_cache", Inputs: []int{2}, Args: map[string][]string{"prefix": {"ime_rec_bert_ner_v1"}}, InDegree: 1},
 		},
 	}
 	testWithCodeAndGraph(t, code, expected)
@@ -89,7 +89,7 @@ func TestGenerateFullGraph(t *testing.T) {
 			{Type: "builtin.jq", Inputs: []int{0}, Args: map[string][]string{"filter": {".payload | fromjson"}}, InDegree: 1},
 			{Type: "builtin.jq", Inputs: []int{1}, Args: map[string][]string{"filter": {".suggestion_type+\"##\"+(.filter_retrievers//[]|join(\"#\"))+\"##\"+(.context//[]|join(\"#\"))+\"##\"+.query"}}, InDegree: 1},
 			{Type: "builtin.lookup_cache", Inputs: []int{2}, Args: map[string][]string{"prefix": {"ime_rec_bert_ner_v1"}}, InDegree: 1},
-			{Type: "builtin.http", Inputs: []int{1}, Args: map[string][]string{"endpoint": {"http://192002625-146479.Production/suggestion/"}, "method": []string{"post"}, "max_retry_times": []string{"3"}, "default_value": []string{"{\"actions\":[]}"}, "timeout": []string{"800ms"}}, InDegree: 1},
+			{Type: "builtin.http", Inputs: []int{1}, Args: map[string][]string{"endpoint": {"http://xxxxx.Production/suggestion/"}, "method": {"post"}, "max_retry_times": {"3"}, "default_value": {"{\"actions\":[]}"}, "timeout": {"800ms"}}, InDegree: 1},
 			{Type: "builtin.jq", Inputs: []int{2, 4}, Args: map[string][]string{"filter": {"{\"key\": .[0], \"payload\": .[1], \"ttl\": 259200000}"}}, InDegree: 2},
 			{Type: "builtin.set_cache", Inputs: []int{5}, Args: map[string][]string{"prefix": {"ime_rec_bert_ner_v1"}}, InDegree: 1},
 			{Type: "builtin.jq", Inputs: []int{3}, Args: map[string][]string{"filter": {".found | not"}}, InDegree: 1},
